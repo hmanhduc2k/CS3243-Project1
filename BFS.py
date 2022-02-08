@@ -1,63 +1,130 @@
 import os
 import sys
-from abc import ABC, abstractmethod
+from enum import Enum
 
 # Helper functions to aid in your implementation. Can edit/remove
 def toInt(c):
     return ord(c) - 97
 
+def toChar(i):
+    return chr(i + 97)
+
 def check(move):
     return toInt(move[0]) >= 0 & toInt(move[0]) < 26 & move[1] >= 0
 
-class Piece(ABC):
-    def __init__(self, move):
-        self.x = toInt(move[0])
-        self.y = move[1]
+def isStepCost(step):
+    if not step.startswith('[') and not step.endswith(']'):
+        return False
+    step = step.replace('[', '')
+    step = step.replace(']', '')
+    arr = step.split(',')
+    try:
+        int(arr[1])
+        return True
+    except Exception as err:
+        return False
 
-    @abstractmethod
+def isPiece(piece):
+    if not piece.startswith('[') and not piece.endswith(']'):
+        return False
+    piece = piece.replace('[', '')
+    piece = piece.replace(']', '')
+    arr = piece.split(',')
+    try:
+        Type[arr[0]]
+        return True
+    except Exception as err:
+        return False
+    
+class Type(Enum):
+    King = 'King'
+    Rook = 'Rook'
+    Bishop = 'Bishop'
+    Queen = 'Queen'
+    Knight = 'Knight'
+    Obstacle = 'Obstacle'
+
+class Piece():
+    def __init__(self, pos, type):
+        self.x = toInt(pos[0])
+        self.y = pos[1]
+        self.type = type
+
     def validMove(self, nextMove):
-        pass
+        if type is Type.King:
+            return abs(toInt(nextMove[0]) - self.x) <= 1 and abs(nextMove[1] - self.y) <= 1
+        elif type is Type.Rook:
+            return (toInt(nextMove[0]) == self.x) or (nextMove[1] == self.y)
+        elif type is Type.Bishop:
+            return abs(toInt(nextMove[0]) - self.x) == abs(nextMove[1] - self.y)
+        elif type is Type.Queen:
+            return (toInt(nextMove[0]) == self.x) or (nextMove[1] == self.y) or (abs(toInt(nextMove[0]) - self.x) == abs(nextMove[1] - self.y))
+        elif type is Type.Knight:
+            return (toInt(nextMove[0]) - self.x + nextMove[1] - self.y) == 3 and (toInt(nextMove[0]) > 0) and (nextMove[1] > 0)
+        else:
+            return False
 
-    def __str__(self):
-        return '(' + chr(self.x + 97) + ', ' + str(self.y) + ')'
-
-class King(Piece):
-    def validMove(self, nextMove):
-        return abs(toInt(nextMove[0]) - self.x) <= 1 and abs(nextMove[1] - self.y) <= 1
-
-class Rook(Piece):
-    def validMove(self, nextMove):
-        return (toInt(nextMove[0]) == self.x) or (nextMove[1] == self.y)
-
-class Bishop(Piece):
-    def validMove(self, nextMove):
-        return abs(toInt(nextMove[0]) - self.x) == abs(nextMove[1] - self.y)
-
-class Queen(Piece):
-    def validMove(self, nextMove):
-        return (toInt(nextMove[0]) == self.x) or (nextMove[1] == self.y) or (abs(toInt(nextMove[0]) - self.x) == abs(nextMove[1] - self.y))
-
-class Knight(Piece):
-    def validMove(self, nextMove):
-        return (toInt(nextMove[0]) - self.x + nextMove[1] - self.y) == 3 and (toInt(nextMove[0]) > 0) and (nextMove[1] > 0)
-
-class Obstacle(Piece):
-    def validMove(self, nextMove):
-        return false
+    def position(self):
+        return [toChar[self.x], self.y]
 
 class Board:
-    def __init__(self, length, width):
-        self.length = length
+    def __init__(self, height, width):
+        self.height = height
         self.width = width
         self.table = []
-        for i in range(length):
+        for i in range(height):
             currRow = []
             for j in range(width):
-                currRow.append(0)
+                currRow.append(1)
             self.table.append(currRow)
+    
+    def __str__(self):
+        res = ""
+        for row in self.table:
+            res = res + str(row) + "\n"
+        return res
+
 
 class State:
-    pass
+    def __init__(self, filepath):
+        isEnemy = False
+        isAlly = False
+        self.table = {}
+        with open(filepath) as fp:
+            line = fp.readline()
+            while line:
+                if line.startswith("Rows"):
+                    boardRow = int(line.split("Rows:")[1])
+                elif line.startswith("Cols"):
+                    boardCol = int(line.split("Cols:")[1])
+                    self.board = Board(boardRow, boardCol)
+                elif line.startswith("Position of Obstacles"):
+                    line = line.split("Position of Obstacles (space between):")[1]
+                    obstacles = line.split(" ")
+                    for obstacle in obstacles:
+                        curr = Piece([obstacle[0], int(obstacle[1])], Type.Obstacle)
+                        self.table[curr] = [obstacle[0], int(obstacle[1])]
+                elif isStepCost(line):
+                    line = line.strip()
+                    line = line.replace('[', '')
+                    line = line.replace(']', '')
+                    arr = line.split(',')
+                    self.board.table[toInt(arr[0][0])][int(arr[0][1])] = int(arr[1])
+                elif line.startswith('Number of Enemy King, Queen, Bishop, '):
+                    isEnemy = True
+                elif line.startswith('Number of Own King, Queen, Bishop'):
+                    isAlly = True
+                    isEnemy = False 
+                elif isEnemy and isPiece(line):
+                    pass
+                elif isAlly and isPiece(line):
+                    pass
+                elif line.startswith('Goal Positions'):
+                    pass
+
+                line = fp.readline()
+            
+
 
 def search():
     pass
@@ -71,9 +138,8 @@ def run_BFS():
     moves, nodesExplored = search() #For reference
     return moves, nodesExplored #Format to be returned
 
-p1 = King(['a', 0])
-print(p1)
-print(p1.validMove(['b', 1]))
-k1 = Rook(['c', 4])
-print(k1)
-print(k1.validMove(['d', 4]))
+# print(Board(21, 21))
+filepath = sys.argv[1]
+# print("Rows:21".split("Rows:"))
+print(State(filepath).board)
+print(State(filepath).table)
