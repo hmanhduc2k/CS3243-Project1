@@ -1,6 +1,7 @@
 import os
 import sys
 from enum import Enum
+from collections import deque
 
 # Helper functions to aid in your implementation. Can edit/remove
 def toInt(c):
@@ -11,6 +12,9 @@ def toChar(i):
 
 def check(move):
     return toInt(move[0]) >= 0 & toInt(move[0]) < 26 & move[1] >= 0
+
+def isValid(x, y, state):
+    return (x >= 0) and (x <= state.board.height) and (y >= 0) and (y <= state.board.width) and (state.table.get(Position(toChar(x), y)) is None)
 
 def clean(s):
     s = s.replace('[', '')
@@ -56,6 +60,9 @@ class Position:
     
     def __str__(self):
         return '(' + self.x + ',' + str(self.y) + ')'
+    
+    def get(self):
+        return self.x, self.y
 
     def __eq__(self, other):
         if not isinstance(other, Position):
@@ -67,9 +74,11 @@ class Position:
 
 # Representation of a chess piece - its current Position and its Type
 class Piece:
-    def __init__(self, pos, type):
-        self.x = toInt(pos.x)
-        self.y = pos.y
+    def __init__(self, currentPosition, type):
+        self.currentPosition = currentPosition
+        self.previousPiece = None
+        self.x = toInt(currentPosition.x)
+        self.y = currentPosition.y
         self.type = type
 
     def validMove(self, nextMove):
@@ -85,22 +94,6 @@ class Piece:
             return (toInt(nextMove.x) - self.x + nextMove.y - self.y) == 3 and (toInt(nextMove.x) > 0) and (nextMove.y > 0)
         else:
             return False
-
-    def validMoves(self, board):
-        xs = []
-        height = board.height
-        width = board.width
-        if self.type == Type.King:
-            return abs(toInt(nextMove.x) - self.x) <= 1 and abs(nextMove.y - self.y) <= 1
-        elif self.type == Type.Rook:
-            return (toInt(nextMove.x) == self.x) or (nextMove.y == self.y)
-        elif self.type == Type.Bishop:
-            return abs(toInt(nextMove.x) - self.x) == abs(nextMove.y - self.y)
-        elif self.type == Type.Queen:
-            return (toInt(nextMove.x) == self.x) or (nextMove.y == self.y) or (abs(toInt(nextMove.x) - self.x) == abs(nextMove.y - self.y))
-        elif self.type == Type.Knight:
-            return (toInt(nextMove.x) - self.x + nextMove.y - self.y) == 3 and (toInt(nextMove.x) > 0) and (nextMove.y > 0)
-        return xs
     
     def threateningMoves(self, board):
         xs = []
@@ -120,10 +113,55 @@ class Piece:
 
     def setPosition(self, pos):
         self.x = toInt(pos.x)
-        self.y = pos.y 
+        self.y = pos.y
+
+    def getAdjacent(self, state):
+        xs = []
+        if isValid(self.x - 1, self.y - 1, state):
+            xs.append(Position(toChar(self.x - 1), self.y - 1))
+        if isValid(self.x - 1, self.y, state):
+            xs.append(Position(toChar(self.x - 1), self.y))
+        if isValid(self.x - 1, self.y + 1, state):
+            xs.append(Position(toChar(self.x - 1), self.y + 1))
+        if isValid(self.x, self.y - 1, state):
+            xs.append(Position(toChar(self.x), self.y - 1))
+        if isValid(self.x, self.y + 1, state):
+            xs.append(Position(toChar(self.x), self.y + 1))
+        if isValid(self.x + 1, self.y - 1, state):
+            xs.append(Position(toChar(self.x + 1), self.y - 1))
+        if isValid(self.x + 1, self.y, state):
+            xs.append(Position(toChar(self.x + 1), self.y))
+        if isValid(self.x + 1, self.y + 1, state):
+            xs.append(Position(toChar(self.x + 1), self.y + 1))
+        return xs
+
+    def traceback(self):
+        currentPiece = self
+        xs = deque()
+        while currentPiece.previousPiece is not None:
+            curr = []
+            curr.append(currentPiece.previousPiece.currentPosition.get())
+            curr.append(currentPiece.currentPosition.get())
+            xs.appendleft(curr)
+            currentPiece = currentPiece.previousPiece
+        return list(xs)
 
     def __str__(self):
         return self.type.name + ' at ' + '(' + toChar(self.x) + ',' + str(self.y) + ')'
+
+    def rep(self):
+        if self.type == Type.King:
+            return 'K'
+        elif self.type == Type.Rook:
+            return 'R'
+        elif self.type == Type.Bishop:
+            return 'B'
+        elif self.type == Type.Queen:
+            return 'Q'
+        elif self.type == Type.Knight:
+            return 'M'
+        else:
+            return 'O'
 
 # Representation of a chess board - including height and width
 class Board:
@@ -151,6 +189,7 @@ class State:
         isEnemy = False
         isAlly = False
         self.table = {}
+        self.goals = []
         count = 1
         with open(filepath) as fp:
             line = fp.readline()
@@ -204,24 +243,70 @@ class State:
                     pos = Position(arr[1][0], int(arr[1][1:]))
                     curr = Piece(pos, Type[arr[0]])
                     self.piece = curr
+                    self.table[pos] = curr
 
                 # Get the goal position
                 elif line.startswith('Goal Positions'):
                     line = line.split('Goal Positions (space between):')[1]
-                    self.goal = Position(line[0], int(line[1:]))
+                    arr = line.split(' ')
+                    for goal in arr:
+                        self.goals.append(Position(goal[0], int(goal[1:])))
 
                 line = fp.readline()
                 count = count + 1
+
+    def traceback(self, endPiece):
+        currentPiece = endPiece
+        xs = deque()
+        self.table[currentPiece.currentPosition] = currentPiece
+        while currentPiece.previousPiece is not None:
+            curr = []
+            curr.append(currentPiece.previousPiece.currentPosition.get())
+            curr.append(currentPiece.currentPosition.get())
+            xs.appendleft(curr)
+            currentPiece = currentPiece.previousPiece
+            self.table[currentPiece.currentPosition] = currentPiece
+        return list(xs)
+
+    def __str__(self):
+        res = ''
+        for i in range(self.board.height + 1):
+            x = '|'
+            for j in range(self.board.width + 1):
+                curr = Position(toChar(i), j)
+                if self.table.get(curr) is not None:
+                    x = x + self.table.get(curr).rep() + '|'
+                else:
+                    x = x + ' |'
+            x = x + '\n'
+            res = res + x
+        return res
 
 
 def search():
     filepath = sys.argv[1]
     state = State(filepath)
-
+    print(state)
     visited = {}
-
-
-
+    q = deque()
+    moves = []
+    nodesExplored = 0
+    q.append(state.piece)
+    visited[state.piece.currentPosition] = True
+    while q:
+        curr = q.popleft()
+        nodesExplored = nodesExplored + 1
+        if curr.getPosition() in state.goals:
+            moves = state.traceback(curr)
+            break
+        for pos in curr.getAdjacent(state):
+            if visited.get(pos) is None:
+                k = Piece(pos, Type.King)
+                k.previousPiece = curr
+                visited[pos] = True
+                q.append(k)
+    print(state)
+    return moves, nodesExplored
 
 ### DO NOT EDIT/REMOVE THE FUNCTION HEADER BELOW###
 # To return: List of moves and nodes explored
@@ -231,18 +316,4 @@ def run_BFS():
     moves, nodesExplored = search() #For reference
     return moves, nodesExplored #Format to be returned
 
-# print(Board(21, 21))
-filepath = sys.argv[1]
-
-s = State(filepath)
-
-print(s.board)
-for key, value in s.table.items():
-    print(str(key), str(value))
-print(s.piece)
-print(s.goal)
-
-# p = Piece(['a', 3], Type['King'])
-# print(p.threateningMoves(Board(10, 10)))
-# print(p.validMove(['a', 4]))
-
+print(run_BFS())
