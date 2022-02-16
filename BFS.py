@@ -2,6 +2,8 @@ import os
 import sys
 from enum import Enum
 from collections import deque
+import time
+import heapq
 
 # Helper functions to aid in your implementation. Can edit/remove
 def toInt(c):
@@ -14,7 +16,13 @@ def check(move):
     return toInt(move[0]) >= 0 & toInt(move[0]) < 26 & move[1] >= 0
 
 def isValid(x, y, state):
-    return (x >= 0) and (x <= state.board.height) and (y >= 0) and (y <= state.board.width) and (state.table.get(Position(toChar(x), y)) is None)
+    return (x >= 0) and (x < state.board.cols) and (y >= 0) and (y < state.board.rows) and (state.table.get(Position(toChar(x), y)) is None)
+
+def isValidConstraint(x, y, board, table):
+    return (x >= 0) and (x < board.cols) and (y >= 0) and (y < board.rows) and (table.get(Position(toChar(x), y)) is None or table.get(Position(toChar(x), y)).type is not Type.Obstacle)
+
+def isObstacle(x, y, table):
+    return table.get(Position(toChar(x), y)) is not None and table.get(Position(toChar(x), y)).type is Type.Obstacle
 
 def clean(s):
     s = s.replace('[', '')
@@ -55,8 +63,8 @@ class Type(Enum):
 # Position of chess piece - x is char and y is int
 class Position:
     def __init__(self, x, y):
-        self.x = x
-        self.y = y
+        self.x = x  # col number in character - horizontal value
+        self.y = y  # row number in integer - vertical value
     
     def __str__(self):
         return '(' + self.x + ',' + str(self.y) + ')'
@@ -81,39 +89,117 @@ class Piece:
         self.y = currentPosition.y
         self.type = type
 
-    def validMove(self, nextMove):
-        if self.type == Type.King:
-            return abs(toInt(nextMove.x) - self.x) <= 1 and abs(nextMove.y - self.y) <= 1
-        elif self.type == Type.Rook:
-            return (toInt(nextMove.x) == self.x) or (nextMove.y == self.y)
-        elif self.type == Type.Bishop:
-            return abs(toInt(nextMove.x) - self.x) == abs(nextMove.y - self.y)
-        elif self.type == Type.Queen:
-            return (toInt(nextMove.x) == self.x) or (nextMove.y == self.y) or (abs(toInt(nextMove.x) - self.x) == abs(nextMove.y - self.y))
-        elif self.type == Type.Knight:
-            return (toInt(nextMove.x) - self.x + nextMove.y - self.y) == 3 and (toInt(nextMove.x) > 0) and (nextMove.y > 0)
-        else:
-            return False
-    
-    def threateningMoves(self, board):
+    def getKing(self, board, table):
         xs = []
-        height = board.height
-        width = board.width
-        for i in range(board.height + 1):
-            for j in range(board.width + 1):
-                curr = Position(toChar(i), j)
-                if curr == self.getPosition():
-                    continue
-                if self.validMove(curr):
-                    xs.append(curr)
+        if isValidConstraint(self.x - 1, self.y - 1, board, table):
+            xs.append(Position(toChar(self.x - 1), self.y - 1))
+        if isValidConstraint(self.x - 1, self.y, board, table):
+            xs.append(Position(toChar(self.x - 1), self.y))
+        if isValidConstraint(self.x - 1, self.y + 1, board, table):
+            xs.append(Position(toChar(self.x - 1), self.y + 1))
+        if isValidConstraint(self.x, self.y - 1, board, table):
+            xs.append(Position(toChar(self.x), self.y - 1))
+        if isValidConstraint(self.x, self.y + 1, board, table):
+            xs.append(Position(toChar(self.x), self.y + 1))
+        if isValidConstraint(self.x + 1, self.y - 1, board, table):
+            xs.append(Position(toChar(self.x + 1), self.y - 1))
+        if isValidConstraint(self.x + 1, self.y, board, table):
+            xs.append(Position(toChar(self.x + 1), self.y))
+        if isValidConstraint(self.x + 1, self.y + 1, board, table):
+            xs.append(Position(toChar(self.x + 1), self.y + 1))
+        return xs
+
+    def getKnight(self, board, table):
+        xs = []
+        if isValidConstraint(self.x - 2, self.y - 1, board, table):
+            xs.append(Position(toChar(self.x - 2), self.y - 1))
+
+        if isValidConstraint(self.x - 1, self.y - 2, board, table):
+            xs.append(Position(toChar(self.x - 1), self.y - 2))
+
+        if isValidConstraint(self.x + 2, self.y - 1, board, table):
+            xs.append(Position(toChar(self.x + 2), self.y - 1))
+
+        if isValidConstraint(self.x + 1, self.y - 2, board, table):
+            xs.append(Position(toChar(self.x + 1), self.y - 2))
+
+        if isValidConstraint(self.x - 2, self.y + 1, board, table):
+            xs.append(Position(toChar(self.x - 2), self.y + 1))
+
+        if isValidConstraint(self.x - 1, self.y + 2, board, table):
+            xs.append(Position(toChar(self.x - 1), self.y + 2))
+
+        if isValidConstraint(self.x + 1, self.y + 2, board, table):
+            xs.append(Position(toChar(self.x + 1), self.y + 2))
+
+        if isValidConstraint(self.x + 2, self.y + 1, board, table):
+            xs.append(Position(toChar(self.x + 2), self.y + 1))
+        return xs
+
+    def getRook(self, board, table):
+        xs = []
+        temp = self.x
+        while temp >= 0 and not isObstacle(temp, self.y, table):
+            xs.append(Position(toChar(temp), self.y))
+            temp = temp - 1
+        temp = self.x
+        while temp < board.cols and not isObstacle(temp, self.y, table):
+            xs.append(Position(toChar(temp), self.y))
+            temp = temp + 1
+        temp = self.y
+        while temp >= 0 and not isObstacle(self.x, temp, table):
+            xs.append(Position(toChar(self.x), temp))
+            temp = temp - 1
+        temp = self.y
+        while temp < board.rows and not isObstacle(self.x, temp, table):
+            xs.append(Position(toChar(self.x), temp))
+            temp = temp + 1
+        return xs
+
+    def getBishop(self, board, table):
+        xs = []
+        tempX = self.x
+        tempY = self.y
+        while tempX >= 0 and tempY >= 0 and not isObstacle(tempX, tempY, table):
+            xs.append(Position(toChar(tempX), tempY))
+            tempX = tempX - 1
+            tempY = tempY - 1
+        tempX = self.x
+        tempY = self.y
+        while tempX < board.cols and tempY >= 0 and not isObstacle(tempX, tempY, table):
+            xs.append(Position(toChar(tempX), tempY))
+            tempX = tempX + 1
+            tempY = tempY - 1
+        tempX = self.x
+        tempY = self.y
+        while tempX >= 0 and tempY < board.rows and not isObstacle(tempX, tempY, table):
+            xs.append(Position(toChar(tempX), tempY))
+            tempX = tempX - 1
+            tempY = tempY + 1
+        tempX = self.x
+        tempY = self.y
+        while tempX < board.cols and tempY < board.rows and not isObstacle(tempX, tempY, table):
+            xs.append(Position(toChar(tempX), tempY))
+            tempX = tempX + 1
+            tempY = tempY + 1
         return xs
 
     def getPosition(self):
         return Position(toChar(self.x), self.y)
 
-    def setPosition(self, pos):
-        self.x = toInt(pos.x)
-        self.y = pos.y
+    def getThreateningConstraints(self, board, table):
+        if self.type == Type.King:
+            return self.getKing(board, table)
+        elif self.type == Type.Rook:
+            return self.getRook(board, table)
+        elif self.type == Type.Bishop:
+            return self.getBishop(board, table)
+        elif self.type == Type.Queen:
+            return self.getRook(board, table) + self.getBishop(board, table)
+        elif self.type == Type.Knight:
+            return self.getKnight(board, table)
+        else:
+            return []
 
     def getAdjacent(self, state):
         xs = []
@@ -165,13 +251,13 @@ class Piece:
 
 # Representation of a chess board - including height and width
 class Board:
-    def __init__(self, height, width):
-        self.height = height
-        self.width = width
+    def __init__(self, rows, cols):
+        self.rows = rows   # refers to the number of rows
+        self.cols = cols   # refers to the number of columns
         self.table = []
-        for i in range(height + 1):
+        for i in range(rows):
             currRow = []
-            for j in range(width + 1):
+            for j in range(cols):
                 currRow.append(1)
             self.table.append(currRow)
     
@@ -190,33 +276,38 @@ class State:
         isAlly = False
         self.table = {}
         self.goals = []
+        self.obstacles = []
+        self.enemies = []
+        self.threats = {}
         count = 1
         with open(filepath) as fp:
             line = fp.readline()
             while line:
                 # Get the number of rows
                 if line.startswith("Rows"):
-                    boardRow = int(line.split("Rows:")[1])
+                    self.boardRow = int(line.split("Rows:")[1])
 
                 # Get the number of column and initiate chess board
                 elif line.startswith("Cols"):
-                    boardCol = int(line.split("Cols:")[1])
-                    self.board = Board(boardRow, boardCol)
+                    self.boardCol = int(line.split("Cols:")[1])
+                    self.board = Board(self.boardRow, self.boardCol)
 
                 # Get and add all obstacle to the chess table
                 elif line.startswith("Position of Obstacles"):
                     line = line.split("Position of Obstacles (space between):")[1]
                     obstacles = line.split(" ")
-                    for obstacle in obstacles:
-                        pos = Position(obstacle[0], int(obstacle[1:]))
-                        curr = Piece(pos, Type.Obstacle)
-                        self.table[pos] = curr
+                    if len(obstacles[0]) >= 2:
+                        for obstacle in obstacles:
+                            pos = Position(obstacle[0], int(obstacle[1:]))
+                            curr = Piece(pos, Type.Obstacle)
+                            self.table[pos] = curr
+                            self.obstacles.append(pos)
 
                 # Get and add all step cost to each position of the chess table
                 elif isStepCost(line):
                     line = clean(line)
                     arr = line.split(',')
-                    self.board.table[toInt(arr[0][0])][int(arr[0][1:])] = int(arr[1])
+                    self.board.table[int(arr[0][1:])][toInt(arr[0][0])] = int(arr[1])
 
                 elif line.startswith('Number of Enemy King, Queen'):
                     isEnemy = True
@@ -231,10 +322,13 @@ class State:
                     pos = Position(arr[1][0], int(arr[1][1:]))
                     curr = Piece(pos, Type[arr[0]])
                     self.table[pos] = curr
-                    xs = curr.threateningMoves(self.board)
+                    self.enemies.append(curr)
+                    # xs = curr.threateningMoves(self.board)
+                    xs = curr.getThreateningConstraints(self.board, self.table)
+                    self.threats[curr] = xs
                     for value in xs:
                         if value not in self.table:
-                            self.table[value] = Piece(value, Type.Obstacle)
+                            self.table[value] = Piece(value, Type[arr[0]])
 
                 # Get and add the starting piece of the game
                 elif isAlly and isPiece(line):
@@ -270,42 +364,71 @@ class State:
 
     def __str__(self):
         res = ''
-        for i in range(self.board.height + 1):
+        for i in range(self.board.rows):
             x = '|'
-            for j in range(self.board.width + 1):
-                curr = Position(toChar(i), j)
+            if i < 10:
+                x = '0' + str(i) + x
+            else:
+                x = str(i) + x
+            for j in range(self.board.cols):
+                curr = Position(toChar(j), i)
                 if self.table.get(curr) is not None:
                     x = x + self.table.get(curr).rep() + '|'
+                elif curr in self.goals:
+                    x = x + 'G|'
                 else:
                     x = x + ' |'
             x = x + '\n'
             res = res + x
-        return res
+        res = res + '  |'
+        for j in range(self.board.cols):
+            res = res + toChar(j) + '|'
+        return res + '\n'
+    
+    def getInfo(self):
+        print(str(self))
+        print(self.board)
+        print('Starting piece is ' + str(self.piece))
+        print('Number of obstacles is ' + str(len(self.obstacles)))
+        temp = 'Obstacles are in: '
+        for pos in self.obstacles:
+            temp = temp + str(pos) + ', '
+        print(temp)
+        print('Enemies are:')
+        for piece in self.enemies:
+            print(str(piece))
+            a = 'Threatening positions: '
+            for pos in self.threats.get(piece):
+                a = a + str(pos) + ', '
+            print(a)
+        temp = 'Goal position(s): '
+        for x in self.goals:
+            temp = temp + str(x) + ', '
+        print(temp + '\n')
 
 
 def search():
     filepath = sys.argv[1]
     state = State(filepath)
-    print(state)
     visited = {}
     q = deque()
     moves = []
     nodesExplored = 0
+    
     q.append(state.piece)
     visited[state.piece.currentPosition] = True
     while q:
         curr = q.popleft()
         nodesExplored = nodesExplored + 1
-        if curr.getPosition() in state.goals:
-            moves = state.traceback(curr)
-            break
         for pos in curr.getAdjacent(state):
             if visited.get(pos) is None:
                 k = Piece(pos, Type.King)
                 k.previousPiece = curr
                 visited[pos] = True
                 q.append(k)
-    print(state)
+                if pos in state.goals:
+                    moves = state.traceback(k)
+                    return moves, nodesExplored
     return moves, nodesExplored
 
 ### DO NOT EDIT/REMOVE THE FUNCTION HEADER BELOW###
@@ -315,5 +438,3 @@ def run_BFS():
 
     moves, nodesExplored = search() #For reference
     return moves, nodesExplored #Format to be returned
-
-print(run_BFS())
